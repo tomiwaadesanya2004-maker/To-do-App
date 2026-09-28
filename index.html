@@ -45,6 +45,14 @@ li .pick{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
 .toast{pointer-events:auto;width:100%;max-width:448px;background:var(--ink);color:var(--bg);border-radius:12px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;align-items:center;gap:10px}
 .toast b{flex:1;word-break:break-word}
 .toast button{font:inherit;font-size:.85rem;border:1.5px solid currentColor;background:none;color:inherit;border-radius:8px;padding:4px 10px;cursor:pointer}
+li{flex-wrap:wrap}
+textarea{font:inherit;width:100%;resize:vertical;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+textarea:focus{outline:2px solid var(--accent);outline-offset:2px}
+#note{flex-basis:100%}
+li textarea.notebox{flex-basis:100%;margin-left:32px;width:calc(100% - 32px)}
+.notepv{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+li .notebtn{border:0;background:none;font-size:1.05rem;cursor:pointer;opacity:.45}
+li .notebtn.has,li .notebtn:hover{opacity:1}
 </style>
 </head>
 <body>
@@ -55,6 +63,7 @@ li .pick{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
     <input type="text" id="text" placeholder="What needs doing?" aria-label="New task" autocomplete="off" required>
     <button class="add" type="submit">Add task</button>
     <label class="when">Remind me <input type="datetime-local" id="when" aria-label="Reminder time"></label>
+    <textarea id="note" rows="2" placeholder="Add a note (optional)" aria-label="Note"></textarea>
   </form>
   <div class="filters" id="filters">
     <button data-f="all" aria-pressed="true">All</button>
@@ -67,6 +76,8 @@ li .pick{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
 </main>
 <script>
 let todos = [], filter = "all";
+const openNotes = new WeakSet();
+let focusTask = null;
 try { todos = JSON.parse(localStorage.getItem("todos") || "[]"); } catch (e) {}
 const $ = id => document.getElementById(id);
 function save(){ try { localStorage.setItem("todos", JSON.stringify(todos)); } catch (e) {} }
@@ -92,6 +103,20 @@ function render(){
       chip.textContent = "🔔 " + fmt(t.remind) + (late ? " · due" : "");
       body.appendChild(chip);
     }
+    if (t.note && !openNotes.has(t)) {
+      const pv = document.createElement("span");
+      pv.className = "chip notepv";
+      pv.textContent = "📝 " + t.note.split("\n")[0];
+      body.appendChild(pv);
+    }
+    const nb = document.createElement("button");
+    nb.className = "notebtn" + (t.note ? " has" : ""); nb.textContent = "📝";
+    nb.setAttribute("aria-label", openNotes.has(t) ? "Close note" : "Open note");
+    nb.setAttribute("aria-expanded", openNotes.has(t));
+    nb.onclick = () => {
+      if (openNotes.has(t)) openNotes.delete(t); else { openNotes.add(t); focusTask = t; }
+      render();
+    };
     const bell = document.createElement("button");
     bell.className = "bell"; bell.textContent = t.remind ? "✕" : "🔔";
     bell.setAttribute("aria-label", t.remind ? "Remove reminder" : "Set reminder");
@@ -106,18 +131,27 @@ function render(){
     const del = document.createElement("button");
     del.className = "del"; del.textContent = "×"; del.setAttribute("aria-label", "Delete task");
     del.onclick = () => { todos = todos.filter(x => x !== t); save(); render(); };
-    li.append(cb, body, pick, bell, del);
+    li.append(cb, body, pick, nb, bell, del);
+    let ta = null;
+    if (openNotes.has(t)) {
+      ta = document.createElement("textarea");
+      ta.className = "notebox"; ta.rows = 3; ta.value = t.note || "";
+      ta.placeholder = "Write a note"; ta.setAttribute("aria-label", "Note for this task");
+      ta.oninput = () => { t.note = ta.value; save(); };
+      li.appendChild(ta);
+    }
     $("list").appendChild(li);
+    if (ta && focusTask === t) { ta.focus(); focusTask = null; }
   });
 }
 $("form").onsubmit = e => {
   e.preventDefault();
   const v = $("text").value.trim();
   if (!v) return;
-  const task = { text: v, done: false, remind: null, fired: false };
+  const task = { text: v, done: false, remind: null, fired: false, note: $("note").value.trim() };
   if ($("when").value) { setRemind(task, new Date($("when").value).getTime()); askPermission(); }
   todos.unshift(task);
-  $("text").value = ""; $("when").value = "";
+  $("text").value = ""; $("when").value = ""; $("note").value = "";
   save(); render();
 };
 $("filters").onclick = e => {
@@ -158,7 +192,7 @@ function tick(){
     if (t.remind && !t.fired && !t.done && t.remind <= now) { t.fired = true; changed = true; alertFor(t); }
   });
   if (changed) save();
-  render();
+  if (!(document.activeElement && document.activeElement.classList.contains("notebox"))) render();
 }
 $("when").min = nowLocal();
 setInterval(tick, 10000);

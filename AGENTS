@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Project
-A simple todo list web app. Users add tasks, tick them off, filter by All / Active / Done, and clear completed ones. Tasks are saved in the browser with localStorage.
+A simple todo list web app. Users add tasks, tick them off, filter by All / Active / Done, set reminders, add notes, and clear completed ones. Tasks are saved in the browser with localStorage.
 
 ## Stack and constraints
 - Plain HTML, CSS and JavaScript in a single `index.html`. No build step, no frameworks.
@@ -17,51 +17,45 @@ A simple todo list web app. Users add tasks, tick them off, filter by All / Acti
 
 ## Definition of done
 - Adding, completing, deleting, filtering and clearing tasks all work.
-- Tasks are still there after a page refresh.
+- Reminders can be set, show on the task, and are marked due when the time passes.
+- Tasks and reminders are still there after a page refresh.
 - Empty input is rejected.
 - Buttons and inputs work with keyboard and have labels.
-- The checks in Testing below pass, including any API endpoint you added or changed.
 
-## Testing
-No test framework, no new files. Test by hand in the browser, on a phone-width screen (about 375px) first, then desktop. Run the checks below after every change and report what you clicked and what happened.
+## Testing rules
+Apply these after every change, and report the results before calling a task finished.
 
-### App checks
-1. Add a task: it appears at the top and the counter updates.
-2. Submit empty and whitespace-only input: nothing is added.
-3. Tick and untick a task: the strike-through and counter update.
-4. Delete a task: only that task disappears.
-5. Filters: All, Active and Done each show the right tasks, and the empty message shows when none match.
-6. Clear completed: removes done tasks only.
-7. Refresh the page: all tasks and their done state are still there.
-8. Keyboard only: Tab reaches every control, Enter submits, Space ticks, focus is visible.
-9. Check the browser console: no errors during any of the above.
+### App testing
+1. **Test the new change first.** Give exact steps and the expected result.
+2. **Then run the regression check.** Confirm these still work: add, complete, delete, filter (All / Active / Done), clear completed, reminders, refresh persistence.
+3. **Test edge cases:** empty input, very long text, special characters like `<script>` and quotes (they must show as plain text), 50+ tasks, and a reminder set in the past.
+4. **Test on a phone-sized screen and on desktop.** Nothing may scroll sideways or overlap.
+5. **Check the browser console.** There must be no red errors.
+6. **Test with saved data missing.** If localStorage is empty or blocked, the app must still load and work.
+7. **Never say "it should work."** Say what was tested and what the result was. If something was not tested, say so.
+8. **The task is finished only when the user confirms the tests pass.**
 
-### API endpoints
-The app has no backend today, so there are no endpoints to test. Adding one changes the stack, so ask first (see Rules). If one is approved, list it in the table below and test every row before calling the work done.
-
-| Method | Path | Success | Errors to test |
-|--------|------|---------|----------------|
-| GET | /api/todos | 200 + JSON array | 500 |
-| POST | /api/todos | 201 + created task | 400 empty `text` |
-| PATCH | /api/todos/:id | 200 + updated task | 400 bad body, 404 unknown id |
-| DELETE | /api/todos/:id | 204 | 404 unknown id |
-
-The rows above are an example shape. Replace them with the real endpoints.
-
-For each endpoint:
-- Test with `curl` before wiring it to the UI, and paste the command and response in your report.
-  `curl -i -X POST /api/todos -H "Content-Type: application/json" -d '{"text":"test"}'`
-- Check the happy path, the status code, and that the response is valid JSON in the documented shape.
-- Check each error case in the table returns the right status and a JSON error message, not an HTML page or a stack trace.
-- Check the round trip: create, then GET shows it; delete, then GET no longer shows it.
-- Check the UI when the request fails or the network is offline: show a clear error and keep the tasks already saved in the browser. Never drop saved tasks because a request failed.
-- Check the endpoint works from the hosted origin (CORS), since the site is static.
+### API endpoint testing
+Apply these when the app gets a backend or calls an API. Today it has none.
+1. **Test every endpoint on its own** before connecting it to the page. Use a tool such as curl, Postman or Thunder Client.
+2. **For each endpoint, test:**
+   - the success case (correct status code, e.g. 200 or 201, and the expected response body)
+   - missing or invalid input (expect 400 with a clear error message)
+   - a resource that does not exist (expect 404)
+   - a missing or wrong login or API key (expect 401 or 403)
+   - the wrong HTTP method (expect 405)
+3. **Check the response shape.** Field names and types must match what the front end expects.
+4. **Handle failure in the UI.** Test with the network off and with the API returning an error. The app must show a plain message and must not lose the user's tasks.
+5. **Never put secrets in the code.** API keys go in environment variables, never in `index.html` or the GitHub repo.
+6. **Write down every endpoint** in an `API.md` file: method, path, input, output, and error codes. Keep it updated when an endpoint changes.
+7. **Test after every change to an endpoint,** then re-run the app regression check above.
 
 ## Backlog (work top to bottom)
 - [x] Add, complete and delete tasks
 - [x] Filters and clear completed
+- [x] Reminders
+- [x] Notes on tasks
 - [ ] Edit a task by double-tapping it
-- [ ] Due dates
 - [ ] Drag to reorder
 
 ## Rules for agents
