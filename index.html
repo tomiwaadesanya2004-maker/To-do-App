@@ -30,6 +30,21 @@ li.done span{text-decoration:line-through;color:var(--muted)}
 li .del{border:0;background:none;color:var(--muted);font-size:1.3rem;cursor:pointer}
 .empty{padding:20px;color:var(--muted);text-align:center}
 #clear{margin-top:14px;font:inherit;border:0;background:none;color:var(--muted);text-decoration:underline;cursor:pointer}
+form{flex-wrap:wrap}
+.when{flex-basis:100%;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.9rem}
+.when input{font:inherit;flex:1;min-width:0;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+li .body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+li .body span{flex:none}
+.chip{font-size:.8rem;color:var(--muted)}
+.chip.due{color:#d9480f;font-weight:700}
+@media (prefers-color-scheme:dark){.chip.due{color:#ff9d5c}}
+li .bell{border:0;background:none;font-size:1.05rem;cursor:pointer;opacity:.7}
+li .bell:hover{opacity:1}
+li .pick{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+#toasts{position:fixed;left:0;right:0;bottom:16px;display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 16px;pointer-events:none}
+.toast{pointer-events:auto;width:100%;max-width:448px;background:var(--ink);color:var(--bg);border-radius:12px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;align-items:center;gap:10px}
+.toast b{flex:1;word-break:break-word}
+.toast button{font:inherit;font-size:.85rem;border:1.5px solid currentColor;background:none;color:inherit;border-radius:8px;padding:4px 10px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -39,6 +54,7 @@ li .del{border:0;background:none;color:var(--muted);font-size:1.3rem;cursor:poin
   <form id="form">
     <input type="text" id="text" placeholder="What needs doing?" aria-label="New task" autocomplete="off" required>
     <button class="add" type="submit">Add task</button>
+    <label class="when">Remind me <input type="datetime-local" id="when" aria-label="Reminder time"></label>
   </form>
   <div class="filters" id="filters">
     <button data-f="all" aria-pressed="true">All</button>
@@ -46,6 +62,7 @@ li .del{border:0;background:none;color:var(--muted);font-size:1.3rem;cursor:poin
     <button data-f="done" aria-pressed="false">Done</button>
   </div>
   <ul id="list"></ul>
+  <div id="toasts" aria-live="assertive"></div>
   <button id="clear">Clear completed</button>
 </main>
 <script>
@@ -65,11 +82,31 @@ function render(){
     const cb = document.createElement("input");
     cb.type = "checkbox"; cb.checked = t.done; cb.setAttribute("aria-label", "Mark done");
     cb.onchange = () => { t.done = cb.checked; save(); render(); };
+    const body = document.createElement("div"); body.className = "body";
     const sp = document.createElement("span"); sp.textContent = t.text;
+    body.appendChild(sp);
+    if (t.remind) {
+      const chip = document.createElement("span");
+      const late = !t.done && t.remind <= Date.now();
+      chip.className = "chip" + (late ? " due" : "");
+      chip.textContent = "🔔 " + fmt(t.remind) + (late ? " · due" : "");
+      body.appendChild(chip);
+    }
+    const bell = document.createElement("button");
+    bell.className = "bell"; bell.textContent = t.remind ? "✕" : "🔔";
+    bell.setAttribute("aria-label", t.remind ? "Remove reminder" : "Set reminder");
+    const pick = document.createElement("input");
+    pick.type = "datetime-local"; pick.className = "pick"; pick.min = nowLocal(); pick.tabIndex = -1;
+    pick.onchange = () => { if (pick.value) { setRemind(t, new Date(pick.value).getTime()); save(); render(); } };
+    bell.onclick = () => {
+      if (t.remind) { t.remind = null; t.fired = false; save(); render(); return; }
+      askPermission();
+      try { pick.showPicker(); } catch (e) { pick.style.cssText = "position:static;opacity:1;pointer-events:auto;width:auto"; pick.focus(); }
+    };
     const del = document.createElement("button");
     del.className = "del"; del.textContent = "×"; del.setAttribute("aria-label", "Delete task");
     del.onclick = () => { todos = todos.filter(x => x !== t); save(); render(); };
-    li.append(cb, sp, del);
+    li.append(cb, body, pick, bell, del);
     $("list").appendChild(li);
   });
 }
@@ -77,8 +114,10 @@ $("form").onsubmit = e => {
   e.preventDefault();
   const v = $("text").value.trim();
   if (!v) return;
-  todos.unshift({ text: v, done: false });
-  $("text").value = "";
+  const task = { text: v, done: false, remind: null, fired: false };
+  if ($("when").value) { setRemind(task, new Date($("when").value).getTime()); askPermission(); }
+  todos.unshift(task);
+  $("text").value = ""; $("when").value = "";
   save(); render();
 };
 $("filters").onclick = e => {
@@ -88,7 +127,43 @@ $("filters").onclick = e => {
   render();
 };
 $("clear").onclick = () => { todos = todos.filter(t => !t.done); save(); render(); };
-render();
+
+// ---- Reminders ----
+function nowLocal(){ return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
+function fmt(ts){ return new Date(ts).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
+function setRemind(t, ts){ t.remind = ts; t.fired = false; }
+function askPermission(){ try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch (e) {} }
+function beep(){
+  try {
+    const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(), g = c.createGain();
+    o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.value = .15;
+    o.start(); o.stop(c.currentTime + .25);
+  } catch (e) {}
+}
+function alertFor(t){
+  beep();
+  try { if ("Notification" in window && Notification.permission === "granted") new Notification("Reminder", { body: t.text }); } catch (e) {}
+  const el = document.createElement("div"); el.className = "toast";
+  const b = document.createElement("b"); b.textContent = "🔔 " + t.text;
+  const snooze = document.createElement("button"); snooze.textContent = "Snooze 10 min";
+  const ok = document.createElement("button"); ok.textContent = "Dismiss";
+  snooze.onclick = () => { setRemind(t, Date.now() + 600000); save(); el.remove(); render(); };
+  ok.onclick = () => el.remove();
+  el.append(b, snooze, ok);
+  $("toasts").appendChild(el);
+}
+function tick(){
+  const now = Date.now(); let changed = false;
+  todos.forEach(t => {
+    if (t.remind && !t.fired && !t.done && t.remind <= now) { t.fired = true; changed = true; alertFor(t); }
+  });
+  if (changed) save();
+  render();
+}
+$("when").min = nowLocal();
+setInterval(tick, 10000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
+tick();
 </script>
 </body>
 </html>
